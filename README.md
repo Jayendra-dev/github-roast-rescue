@@ -8,7 +8,7 @@
 ![GitHub API](https://img.shields.io/badge/GitHub-API-black?style=for-the-badge)
 ![No Backend](https://img.shields.io/badge/100%25-Client%20Side-blue?style=for-the-badge)
 
-**🚀 Live Demo:** https://your-link.netlify.app _(replace after deploy)_
+**🚀 Live Demo:**https://github-roast-rescue.vercel.app/_
 
 ---
 
