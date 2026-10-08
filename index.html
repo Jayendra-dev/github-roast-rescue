@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub Roast & Rescue</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  body{font-family:'Space Grotesk',sans-serif;background:#0a0a0a;color:white}
+ .mono{font-family:'JetBrains Mono',monospace}
+</style>
+</head>
+<body>
+<div class="max-w-5xl mx-auto px-6 py-10">
+  <!-- Header -->
+  <div class="text-center mb-8">
+    <h1 class="text-5xl md:text-6xl font-black tracking-tighter">GitHub <span class="bg-white text-black px-3 py-1">Roast</span> & Rescue</h1>
+    <p class="text-neutral-400 mt-3">Honest feedback your GitHub deserves. Recruiter-grade.</p>
+  </div>
+
+  <!-- Input -->
+  <div class="bg-neutral-900 border border-neutral-800 rounded-[20px] p-3 flex flex-col md:flex-row gap-3">
+    <div class="flex-1 flex items-center bg-black rounded-xl border border-neutral-800 px-4">
+      <span class="text-neutral-500 mono text-sm">github.com/</span>
+      <input id="username" placeholder="torvalds" class="flex-1 bg-transparent outline-none py-4 px-2 text-lg" />
+    </div>
+    <div class="flex gap-2">
+      <input id="ghToken" placeholder="ghp_ token (optional, for no limit)" class="hidden md:block w-[220px] bg-black border border-neutral-800 rounded-xl px-4 text-xs mono outline-none" />
+      <button onclick="roast()" id="btn" class="bg-white text-black font-bold px-8 py-4 rounded-xl hover:bg-neutral-200 transition whitespace-nowrap">Roast Me 🔥</button>
+    </div>
+  </div>
+  <p class="text-[11px] text-neutral-500 mt-2 mono text-center">No API keys needed. Works offline. Add GitHub token only if you hit limit. Built for hackathon.</p>
+
+  <!-- Loading -->
+  <div id="loading" class="hidden mt-20 text-center">
+    <div class="inline-flex items-center gap-3 animate-pulse"><span class="text-3xl">🤖</span><span class="text-xl">Running 30-sec recruiter scan...</span></div>
+    <div class="mt-3 text-neutral-500 text-sm mono">Fetching profile, repos, README check, languages</div>
+  </div>
+
+  <!-- Result -->
+  <div id="result" class="hidden mt-10"></div>
+</div>
+
+<script>
+async function roast(){
+  const username = document.getElementById('username').value.trim()
+  const token = document.getElementById('ghToken').value.trim()
+  if(!username) return alert('Enter GitHub username')
+  const btn = document.getElementById('btn')
+  btn.innerText = 'Cooking...'; btn.disabled=true
+  document.getElementById('loading').classList.remove('hidden')
+  document.getElementById('result').classList.add('hidden')
+
+  try{
+    const headers = token? {Authorization: `Bearer ${token}`} : {}
+    // 1. User
+    const uRes = await fetch(`https://api.github.com/users/${username}`, {headers})
+    const user = await uRes.json()
+    if(user.message === 'Not Found') throw new Error('User not found!')
+    if(user.message?.includes('rate limit')) throw new Error('GitHub limit hit! Paste a token from github.com/settings/tokens (classic, no scope) in the optional field, or wait 2 min.')
+
+    // 2. Repos
+    const rRes = await fetch(`https://api.github.com/users/${username}/repos?sort=updated&per_page=30`, {headers})
+    let repos = await rRes.json()
+    if(!Array.isArray(repos)) repos = []
+
+    // Score calculation
+    let score = 0
+    const checks = []
+    if(user.bio){ score+=15; checks.push('✅ Bio present (+15)') } else checks.push('❌ No bio (-15)')
+    if(user.avatar_url){ score+=5 }
+    if(user.public_repos > 5){ score+=10; checks.push(`✅ ${user.public_repos} public repos (+10)`)} else checks.push('❌ <5 repos (-10)')
+    if(user.followers > 5){ score+=10; checks.push(`✅ ${user.followers} followers (+10)`)} else checks.push('❌ Low followers/social proof')
+    const forkRatio = repos.filter(r=>r.fork).length / Math.max(1,repos.length)
+    if(forkRatio < 0.5){ score+=15; checks.push('✅ Mostly original work (+15)')} else { checks.push(`❌ ${Math.round(forkRatio*100)}% forks - recruiters want original`); score+=5 }
+    const withDesc = repos.filter(r=>r.description).length
+    if(withDesc > repos.length*0.6){ score+=15; checks.push('✅ Most repos have description (+15)')} else checks.push('❌ Missing descriptions')
+    const recent = repos.filter(r=> new Date(r.updated_at) > new Date(Date.now()-90*24*3600*1000)).length
+    if(recent >= 2){ score+=15; checks.push(`✅ ${recent} repos updated in 90 days (+15)`)} else checks.push('❌ No recent activity - looks abandoned')
+    const stars = repos.reduce((a,b)=>a+b.stargazers_count,0)
+    if(stars > 10) score+=10
+    if(user.blog || user.twitter_username) score+=5
+    score = Math.min(100, Math.max(12, score))
+
+    // Top languages
+    const langs = [...new Set(repos.map(r=>r.language).filter(Boolean))].slice(0,5)
+    const topRepos = [...repos].sort((a,b)=>b.stargazers_count - a.stargazers_count).slice(0,6)
+
+    // Generate Roast
+    const roasts=[]
+    if(!user.bio) roasts.push(`Bio? Never heard of her. Your profile is more mysterious than your commit messages.`)
+    if(forkRatio>0.6) roasts.push(`Your GitHub is basically a fork museum. ${Math.round(forkRatio*100)}% forks - even GitHub thinks you're just a collector.`)
+    if(withDesc < repos.length*0.3) roasts.push(`Your repo descriptions are emptier than my fridge on Sunday. Recruiters play guessing games: "What does ${repos[0]?.name||'this repo'} do?"`)
+    if(recent===0) roasts.push(`Last commit was so long ago, archaeologists are studying it. LinkedIn says 'Open to work' but GitHub says 'Open to hibernation'.`)
+    if(user.public_repos > 20 && stars < 5) roasts.push(`You have ${user.public_repos} repos and ${stars} stars total. That's like opening 20 restaurants and nobody came.`)
+    if(!user.name) roasts.push(`Even you didn't bother to put your real name. If you don't trust your own code, why should a recruiter?`)
+    roasts.push(`Your pinned repos? Oh wait, you didn't curate them. Recruiters have 30 seconds - you're making them dig like it's Minecraft.`)
+    if(score < 50) roasts.push(`Recruiter Readiness Score ${score} - On the bright side, you can only go up from here.`)
+
+    // Rescue Plan
+    const todos=[]
+    if(!user.bio) todos.push('Add a killer 1-line bio: Role | Tech | What you build e.g. "Full-stack dev | React/Node | Building dev tools"')
+    todos.push(`Pin TOP 3 original repos: ${topRepos.slice(0,3).map(r=>r.name).join(', ')||'your best ones'} - Go to profile > Customize pins`)
+    if(withDesc < repos.length*0.5) todos.push(`Add descriptions to ${repos.length-withDesc} repos - 1 line what it does + tech stack`)
+    todos.push(`Add README to every pinned repo: Problem, Demo Link, Tech, How to run, Screenshots`)
+    if(recent < 2) todos.push('Push 2 commits this week - fix typo, add live demo link, or update README')
+    todos.push(`Add live demo / Vercel links to ${topRepos[0]?.name||'top repo'} - recruiters don't clone, they click`)
+    todos.push('Add social links & portfolio website to GitHub profile settings')
+
+    const newBio = `${user.name||username} | ${langs.slice(0,3).join(' • ')||'Developer'} | Building ${topRepos[0]?.name||'cool stuff'} | ${user.public_repos}+ repos`
+    const readmeTemplate = `# ${topRepos[0]?.name||'My Awesome Project'}
+
+> ${topRepos[0]?.description||'One line what it does and why it matters'}
+
+**Live Demo:** https://your-demo.vercel.app
+**Stack:** ${langs.join(', ')}
+
+## Why this project?
+2 lines on problem you solved.
+
+## Features
+- Feature 1
+- Feature 2
+- Feature 3
+
+## How to Run
+\`\`\`bash
+npm install
+npm run dev
+\`\`\`
+
+## Screenshots
+Add 2 screenshots / GIF
+
+---
+Built by ${username} | [LinkedIn] | [Portfolio]`
+
+    const recruiterView = score > 70? `Strong profile. ${user.public_repos} repos, active, clear bio. Would shortlist for interview - just add demo links.` : score > 45? `Potential but messy. I have to hunt for good projects. Pin your best 3, add READMEs with demos. Right now I'd skip after 20 sec.` : `Hard to evaluate in 30 sec. Lots of repos but no story. No bio, no READMEs, no demos. Looks like tutorial hell. Needs urgent cleanup before applying.`
+
+    document.getElementById('result').innerHTML = `
+      <div class="bg-neutral-900 border border-neutral-800 rounded-[20px] p-6 flex items-center gap-6">
+        <img src="${user.avatar_url}" class="w-20 h-20 rounded-full border border-neutral-700"/>
+        <div class="flex-1">
+          <h2 class="text-2xl font-bold">${user.name||user.login} <span class="text-neutral-500 font-normal text-lg">@${user.login}</span></h2>
+          <p class="text-neutral-400 text-sm mt-1">${user.bio||'No bio - first thing to fix!'}</p>
+          <div class="flex gap-3 mt-2 mono text-[11px] text-neutral-500"><span>📦 ${user.public_repos} repos</span><span>👥 ${user.followers} followers</span><span>📅 ${new Date().getFullYear() - new Date(user.created_at).getFullYear()}y on GitHub</span></div>
+        </div>
+        <div class="text-center">
+          <div class="w-24 h-24 rounded-full border-4 ${score>70?'border-green-500 text-green-400':score>45?'border-yellow-500 text-yellow-400':'border-red-500 text-red-400'} flex flex-col items-center justify-center"><span class="text-3xl font-black">${score}</span><span class="text-[10px] mono">SCORE</span></div>
+          <button onclick="navigator.clipboard.writeText(window.location.href); alert('Link copied!')" class="mt-2 text-[10px] mono bg-white text-black px-3 py-1 rounded-full">Share Card</button>
+        </div>
+      </div>
+
+      <div class="mt-4 bg-black border border-neutral-800 rounded-xl p-3 flex-wrap gap-2 mono text-[11px] text-neutral-400">
+        <span class="text-white font-bold">Recruiter Checklist:</span> ${checks.map(c=>`<span class="bg-neutral-900 border border-neutral-800 px-2 py-1 rounded-full">${c}</span>`).join('')}
+      </div>
+
+      <div class="mt-6 flex gap-2 p-1 bg-neutral-900 rounded-full w-fit border border-neutral-800">
+        <button id="tab-roast" onclick="showTab('roast')" class="px-6 py-2 rounded-full bg-white text-black font-bold">🔥 Roast Mode</button>
+        <button id="tab-rescue" onclick="showTab('rescue')" class="px-6 py-2 rounded-full text-neutral-400">🛠️ Rescue Mode</button>
+      </div>
+
+      <div id="roastTab" class="mt-6 grid md:grid-cols-2 gap-6">
+        <div class="bg-red-950/20 border border-red-900/40 rounded-[20px] p-6"><h3 class="font-bold text-red-400 mb-4 tracking-wide">🔥 THE ROAST</h3><ul class="space-y-3">${roasts.map(r=>`<li class="text-[14px] leading-relaxed bg-black/50 border border-red-900/20 p-3 rounded-xl">• ${r}</li>`).join('')}</ul></div>
+        <div class="bg-neutral-900 border border-neutral-800 rounded-[20px] p-6"><h3 class="font-bold mb-3">👀 30-Second Recruiter View</h3><p class="bg-black border border-neutral-800 p-4 rounded-xl text-sm italic text-neutral-300">"${recruiterView}"</p><h3 class="font-bold mt-6 mb-3 text-green-400">✅ What Works</h3><ul class="text-sm text-neutral-400 space-y-1"><li>• ${user.public_repos} public repos shows consistency</li><li>• Top languages: ${langs.join(', ')||'diverse'}</li><li>• Account age: ${new Date().getFullYear() - new Date(user.created_at).getFullYear()} years = commitment</li></ul><div class="mt-6"><h4 class="font-bold text-xs mono uppercase text-neutral-500">Top Repos to Fix First</h4><div class="mt-2 space-y-2">${topRepos.slice(0,3).map(r=>`<div class="bg-black border border-neutral-800 p-3 rounded-xl flex justify-between"><div><div class="font-bold text-sm">${r.name}</div><div class="text-xs text-neutral-500">${r.description||'No description'}</div></div><span class="text-xs">⭐${r.stargazers_count}</span></div>`).join('')}</div></div></div>
+      </div>
+
+      <div id="rescueTab" class="hidden mt-6">
+        <div class="bg-white text-black rounded-[20px] p-6 md:p-8">
+          <h3 class="font-black text-2xl tracking-tight">🛠️ RESCUE PLAN - Do this in 1 hour</h3>
+          <div class="mt-6 grid md:grid-cols-2 gap-8">
+            <div>
+              <p class="font-bold text-[11px] mono uppercase text-neutral-500">Step 1: New Bio (Copy Paste)</p>
+              <div class="mt-2 bg-neutral-100 border p-3 rounded-xl mono text-sm flex justify-between items-center"><span>${newBio}</span><button onclick="navigator.clipboard.writeText('${newBio.replace(/'/g,"\\'")}'); this.innerText='Copied!'" class="bg-black text-white px-3 py-1 rounded-full text-xs">Copy</button></div>
+
+              <p class="font-bold text-[11px] mono uppercase text-neutral-500 mt-6">Step 2: Action Checklist</p>
+              <div class="mt-2 space-y-2">${todos.map((t,i)=>`<label class="flex gap-3 bg-neutral-50 border p-3 rounded-xl text-sm cursor-pointer hover:bg-neutral-100"><input type="checkbox" class="mt-1"><span><b>${i+1}.</b> ${t}</span></label>`).join('')}</div>
+
+              <p class="font-bold text-[11px] mono uppercase text-neutral-500 mt-6">Step 3: What to Pin</p>
+              <p class="text-sm mt-2">Go to github.com/${username} > Customize pins > Select: <b>${topRepos.slice(0,3).map(r=>r.name).join(', ')}</b>. Remove all forks.</p>
+            </div>
+            <div>
+              <div class="flex justify-between items-center"><p class="font-bold text-[11px] mono uppercase text-neutral-500">Step 4: README Template (Copy for your best repo)</p><button onclick="navigator.clipboard.writeText(document.getElementById('readmeCode').innerText); this.innerText='Copied!'" class="bg-black text-white px-3 py-1 rounded-full text-xs">Copy</button></div>
+              <pre id="readmeCode" class="bg-neutral-900 text-white p-4 rounded-xl mt-2 text-[12px] overflow-auto whitespace-pre-wrap h-[420px] mono">${readmeTemplate}</pre>
+              <div class="mt-4 bg-green-50 border border-green-200 p-3 rounded-xl text-sm"><b>Result:</b> After this, your score goes from ${score} → ~85+. Recruiters spend 2 min not 20 sec.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 text-center mono text-[11px] text-neutral-600">Tech: GitHub REST API + Vanilla JS scoring engine (No AI key needed) | Shareable Scorecard Ready</div>
+    `
+    document.getElementById('result').classList.remove('hidden')
+    window.scrollTo({top: document.getElementById('result').offsetTop, behavior:'smooth'})
+  }catch(e){
+    alert(e.message)
+  }finally{
+    btn.innerText='Roast Me 🔥'; btn.disabled=false
+    document.getElementById('loading').classList.add('hidden')
+  }
+}
+function showTab(t){
+  document.getElementById('roastTab').classList.toggle('hidden', t!=='roast')
+  document.getElementById('rescueTab').classList.toggle('hidden', t!=='rescue')
+  document.getElementById('tab-roast').className = t==='roast'? 'px-6 py-2 rounded-full bg-white text-black font-bold' : 'px-6 py-2 rounded-full text-neutral-400'
+  document.getElementById('tab-rescue').className = t==='rescue'? 'px-6 py-2 rounded-full bg-white text-black font-bold' : 'px-6 py-2 rounded-full text-neutral-400'
+}
+</script>
+</body>
+</html>
